@@ -34,7 +34,7 @@ const C = {
   ANG_DAMP:         1.6,
   MAX_ANG_VEL:      5.2,
 
-  CLEAN_LAND_RAD:   0.5,    // ~28°
+  CLEAN_LAND_RAD:   0.55,   // ~31.5° (was 0.5 / ~28.6°)
   PERFECT_LAND_RAD: 0.18,   // ~10°
 
   TRICK_DURATION:   0.85,
