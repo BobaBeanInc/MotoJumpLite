@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#150a1f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>MotoJumpLite - Penelope's Ramp Run</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23150a1f'/%3E%3Ccircle cx='4' cy='11' r='3' fill='%23f8e060'/%3E%3Ccircle cx='12' cy='11' r='3' fill='%23f8e060'/%3E%3Crect x='5' y='6' width='6' height='3' fill='%23ff5cae'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD overlay (only visible during play) -->
+    <div id="hud" class="hidden">
+      <div class="hud-row">
+        <span id="hud-mode">QUICKPLAY</span>
+        <span id="hud-distance">DIST 0M</span>
+        <span id="hud-score">SCORE 0</span>
+        <span id="hud-speed">MPH 0</span>
+        <span id="hud-extra">BEST 0</span>
+      </div>
+      <div id="hud-combo" class="hud-combo hidden">COMBO x2</div>
+    </div>
+
+    <!-- Floating popup messages -->
+    <div id="message-overlay" aria-live="polite"></div>
+
+    <!-- Top-right system buttons -->
+    <div id="top-right-buttons">
+      <button id="btn-mute" class="icon-btn" title="Mute" aria-label="Toggle Sound">♪</button>
+      <button id="btn-pause" class="icon-btn pause-btn hidden" title="Pause" aria-label="Pause">II</button>
+    </div>
+
+    <!-- On-screen controls (visible during play) -->
+    <div id="controls" class="hidden">
+      <div class="ctrl-group ctrl-left">
+        <button id="btn-tilt-back" class="ctrl tilt" aria-label="Tilt Back">↶</button>
+        <button id="btn-tilt-forward" class="ctrl tilt" aria-label="Tilt Forward">↷</button>
+      </div>
+      <div class="ctrl-group ctrl-right">
+        <button id="btn-trick" class="ctrl small" aria-label="Trick">★</button>
+        <button id="btn-throttle" class="ctrl med" aria-label="Throttle">»</button>
+        <button id="btn-jump" class="ctrl big" aria-label="Jump">▲</button>
+      </div>
+    </div>
+
+    <!-- Main Menu Screen -->
+    <div id="screen-main" class="screen">
+      <div class="panel">
+        <h1 class="title">MOTO<span class="title-accent">JUMP</span>LITE</h1>
+        <p class="tagline">★ PENELOPE'S RAMP RUN ★</p>
+        <p class="sub-tagline">PUSH THROTTLE. CATCH AIR. STICK IT.</p>
+        <div class="menu-btns">
+          <button class="menu-btn primary" data-action="quickplay">QUICK PLAY</button>
+          <button class="menu-btn primary" data-action="campaign">CAMPAIGN · 15 LEVELS</button>
+          <button class="menu-btn" data-action="how-to-play">HOW TO PLAY</button>
+        </div>
+        <p class="hint">v1.0 · ARCADE STUNT ACTION</p>
+      </div>
+    </div>
+
+    <!-- How To Play Screen -->
+    <div id="screen-how" class="screen hidden">
+      <div class="panel">
+        <h2 class="title small">HOW TO PLAY</h2>
+        <div class="how-content">
+          <div class="how-section">
+            <div class="how-section-title">CONTROLS</div>
+            <div class="how-row"><b>JUMP</b><span>SPACE / W / ↑ / TAP ▲</span></div>
+            <div class="how-row"><b>THROTTLE</b><span>SHIFT / → / HOLD »</span></div>
+            <div class="how-row"><b>TILT BACK</b><span>A / ← / TAP ↶</span></div>
+            <div class="how-row"><b>TILT FWD</b><span>D / ↓ / TAP ↷</span></div>
+            <div class="how-row"><b>TRICK</b><span>T / E / TAP ★</span></div>
+            <div class="how-row"><b>PAUSE</b><span>P / ESC / TAP II</span></div>
+            <div class="how-row"><b>RESTART</b><span>R (AFTER CRASH)</span></div>
+          </div>
+          <div class="how-section">
+            <div class="how-section-title">TIPS</div>
+            <p>★ Tap JUMP again midair for a DOUBLE JUMP.</p>
+            <p>★ TILT to align your bike flat for clean landings.</p>
+            <p>★ Hit TRICK in the air for a bonus on landing.</p>
+            <p>★ Jump over CONES, BUMPS and DIPS for bonuses.</p>
+            <p>★ Hit ramps fast for big AIR TIME.</p>
+            <p>★ In Campaign, reach the FINISH FLAG to win the level.</p>
+          </div>
+        </div>
+        <button class="menu-btn primary" data-action="back-main">BACK</button>
+      </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="screen-pause" class="screen hidden">
+      <div class="panel narrow">
+        <h2 class="title small">PAUSED</h2>
+        <div class="menu-btns">
+          <button class="menu-btn primary" data-action="resume">RESUME</button>
+          <button class="menu-btn" data-action="restart">RESTART</button>
+          <button class="menu-btn" data-action="main-menu">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Play Game Over Screen -->
+    <div id="screen-gameover" class="screen hidden">
+      <div class="panel">
+        <h2 class="title small">GAME OVER</h2>
+        <p class="tagline" id="gameover-flavor">★ NICE RUN ★</p>
+        <div class="result-grid" id="gameover-stats"></div>
+        <div class="menu-btns">
+          <button class="menu-btn primary" data-action="restart">RESTART RUN</button>
+          <button class="menu-btn" data-action="main-menu">MAIN MENU</button>
+        </div>
+        <p class="hint">PRESS R TO RESTART</p>
+      </div>
+    </div>
+
+    <!-- Level Complete Screen -->
+    <div id="screen-level-complete" class="screen hidden">
+      <div class="panel">
+        <h2 class="title small">LEVEL COMPLETE!</h2>
+        <p class="tagline" id="level-flavor">★ STAGE CLEARED ★</p>
+        <div class="result-grid" id="level-stats"></div>
+        <div class="bike-night">
+          <div class="bike-night-title">★ BIKE NIGHTS AT BOBA BEAN ★</div>
+          <div class="bike-night-row">Every Thursday, 6 PM to 8 PM</div>
+          <div class="bike-night-row">40 Concord Commons Pl SW</div>
+          <div class="bike-night-row">Concord, NC 28027</div>
+        </div>
+        <div class="menu-btns">
+          <button class="menu-btn primary" data-action="next-level">NEXT LEVEL</button>
+          <button class="menu-btn" data-action="main-menu">MAIN MENU</button>
+        </div>
+        <p class="hint">PRESS ENTER TO CONTINUE</p>
+      </div>
+    </div>
+
+    <!-- Campaign Complete Screen -->
+    <div id="screen-campaign-complete" class="screen hidden">
+      <div class="panel">
+        <h2 class="title small">★ CAMPAIGN COMPLETE ★</h2>
+        <p class="tagline">ALL 15 LEVELS CLEARED!</p>
+        <p class="sub-tagline">PENELOPE IS THE CHAMP.</p>
+        <div class="result-grid" id="campaign-stats"></div>
+        <div class="bike-night">
+          <div class="bike-night-title">★ BIKE NIGHTS AT BOBA BEAN ★</div>
+          <div class="bike-night-row">Every Thursday, 6 PM to 8 PM</div>
+          <div class="bike-night-row">40 Concord Commons Pl SW</div>
+          <div class="bike-night-row">Concord, NC 28027</div>
+        </div>
+        <div class="menu-btns">
+          <button class="menu-btn primary" data-action="restart-campaign">RESTART CAMPAIGN</button>
+          <button class="menu-btn" data-action="main-menu">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
