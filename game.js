@@ -39,6 +39,11 @@ const C = {
 
   TRICK_DURATION:   0.85,
 
+  MAX_HEALTH:       3,
+  HEART_SPAWN_PROB: 0.07,
+  HEART_MIN_GAP:    900,
+  RESPAWN_INVULN:   1.5,
+
   BLINK_DURATION:   1.5,
   BLINK_INTERVAL:   0.10,
 
@@ -139,6 +144,11 @@ const Audio = {
   finish()     {
     const notes = [523, 659, 784, 1047, 1318];
     notes.forEach((f, i) => setTimeout(() => this.beep(f, 0.18, 'square', 0.10), i * 100));
+  },
+  heart()      {
+    this.beep(880, 0.08, 'square', 0.10, 200);
+    setTimeout(() => this.beep(1175, 0.10, 'triangle', 0.10, 200), 70);
+    setTimeout(() => this.beep(1567, 0.12, 'square', 0.10, 200), 140);
   },
   menu()       { this.beep(660, 0.04, 'square', 0.08); },
   combo()      { this.beep(880, 0.05, 'square', 0.06); },
@@ -275,10 +285,12 @@ class Terrain {
     this.points    = [];   // sorted by x
     this.features  = [];   // ramps, bumps, dips
     this.cones     = [];   // standalone cones
+    this.hearts    = [];   // health pickups
     this.finish    = null; // {x} for campaign only
     this.endless   = false;
     this.endX      = 0;
     this.lastGenX  = 0;
+    this.lastHeartX = -2000;
     this.minGap    = 180;
   }
 
@@ -286,9 +298,11 @@ class Terrain {
     this.points.length = 0;
     this.features.length = 0;
     this.cones.length = 0;
+    this.hearts.length = 0;
     this.finish = null;
     this.endX = 0;
     this.lastGenX = 0;
+    this.lastHeartX = -2000;
   }
 
   // -------- Campaign: full procedural level --------
@@ -348,6 +362,7 @@ class Terrain {
     const cutoff = playerX - 800;
     this.points   = this.points.filter(p => p.x > cutoff);
     this.cones    = this.cones.filter(c => c.x > cutoff);
+    this.hearts   = this.hearts.filter(h => h.x > cutoff);
     this.features = this.features.filter(f => f.x_end > cutoff);
     if (this.points.length === 0 || this.points[0].x > cutoff - 100) {
       this.points.unshift({ x: cutoff - 200, y: C.GROUND_BASE_Y });
@@ -376,6 +391,18 @@ class Terrain {
         this.cones.push({ x: nextX + 20 + i * 22, hit: false, cleared: false });
       }
       nextX += count * 22 + 20;
+    }
+    // Occasionally spawn a heart pickup in a clear spot
+    if (Math.random() < C.HEART_SPAWN_PROB &&
+        (nextX - this.lastHeartX) > C.HEART_MIN_GAP) {
+      this.hearts.push({
+        x: nextX + 30,
+        y: C.GROUND_BASE_Y - 46,
+        collected: false,
+        bobPhase: Math.random() * Math.PI * 2,
+      });
+      this.lastHeartX = nextX;
+      nextX += 50;
     }
     return nextX;
   }
@@ -500,6 +527,8 @@ class Player {
     this.targetSpeed = C.BASE_SPEED;
     this.wheelSpin = 0;
     this.exhaustTimer = 0;
+    this.maxHealth = C.MAX_HEALTH;
+    this.health = C.MAX_HEALTH;
   }
 
   reset(x, y, speed) {
@@ -529,7 +558,7 @@ class Player {
     this.grounded = true;
     this.crashed = false;
     this.invulnerable = true;
-    this.invulnTimer = 1.2;
+    this.invulnTimer = C.RESPAWN_INVULN;
     this.blinkTimer = 0;
     this.doubleJumpAvailable = true;
     this.trickUsedThisJump = false;
@@ -789,6 +818,20 @@ class Player {
     // Finish flag (campaign only)
     if (terrain.finish && prevX < terrain.finish.x && this.x >= terrain.finish.x) {
       this.game.onFinish();
+    }
+
+    // Heart pickups - bounding box check (requires slight lift to reach)
+    const playerCenterY = this.y - 16;
+    for (const h of terrain.hearts) {
+      if (h.collected) continue;
+      // Only check hearts near current x
+      if (h.x < this.x - 24 || h.x > this.x + 24) continue;
+      const dx = Math.abs(this.x - h.x);
+      const dy = Math.abs(playerCenterY - h.y);
+      if (dx < 22 && dy < 20) {
+        h.collected = true;
+        this.game.onHeartPickup(h.x, h.y);
+      }
     }
   }
 
@@ -1123,7 +1166,7 @@ const Renderer = {
     }
   },
 
-  drawFeatures(ctx, terrain, cameraX, viewW) {
+  drawFeatures(ctx, terrain, cameraX, viewW, t) {
     const startX = cameraX - 50, endX = cameraX + viewW + 50;
 
     // Cones
@@ -1131,6 +1174,13 @@ const Renderer = {
       if (cone.x < startX || cone.x > endX) continue;
       const gy = terrain.groundY(cone.x);
       this._cone(ctx, cone.x, gy, cone.hit);
+    }
+
+    // Hearts (health pickups)
+    for (const h of terrain.hearts) {
+      if (h.collected) continue;
+      if (h.x < startX || h.x > endX) continue;
+      this._heart(ctx, h.x, h.y, t + h.bobPhase);
     }
 
     // Finish flag
@@ -1141,6 +1191,48 @@ const Renderer = {
         this._finishFlag(ctx, fx, gy);
       }
     }
+  },
+
+  _heart(ctx, x, y, t) {
+    const bob = Math.sin(t * 2.8) * 2.5;
+    const cy = y + bob;
+
+    // Outer glow
+    ctx.fillStyle = 'rgba(255, 200, 220, 0.25)';
+    ctx.beginPath();
+    ctx.arc(x, cy, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 240, 200, 0.18)';
+    ctx.beginPath();
+    ctx.arc(x, cy, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White outline
+    ctx.fillStyle = '#fff';
+    this._heartShape(ctx, x, cy, 12);
+    // Dark border between white and red
+    ctx.fillStyle = '#150a1f';
+    this._heartShape(ctx, x, cy, 10);
+    // Red fill
+    ctx.fillStyle = '#ff3060';
+    this._heartShape(ctx, x, cy, 8.5);
+    // Pink highlight
+    ctx.fillStyle = '#ffb8c8';
+    ctx.fillRect(Math.round(x - 4), Math.round(cy - 5), 2, 2);
+    ctx.fillRect(Math.round(x - 5), Math.round(cy - 3), 1, 1);
+  },
+
+  _heartShape(ctx, cx, cy, sz) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + sz * 0.6);
+    ctx.bezierCurveTo(cx + sz * 1.2, cy + sz * 0.0,
+                      cx + sz * 1.2, cy - sz * 0.85,
+                      cx,            cy - sz * 0.2);
+    ctx.bezierCurveTo(cx - sz * 1.2, cy - sz * 0.85,
+                      cx - sz * 1.2, cy + sz * 0.0,
+                      cx,            cy + sz * 0.6);
+    ctx.closePath();
+    ctx.fill();
   },
 
   _cone(ctx, x, gy, hit) {
@@ -1501,6 +1593,7 @@ const UI = {
     if (this.hud.classList.contains('hidden')) return;
 
     const modeEl = document.getElementById('hud-mode');
+    const hpEl = document.getElementById('hud-hp');
     const distEl = document.getElementById('hud-distance');
     const scoreEl = document.getElementById('hud-score');
     const speedEl = document.getElementById('hud-speed');
@@ -1509,6 +1602,14 @@ const UI = {
 
     const mph = Math.max(0, Math.floor(game.player.vx / 4.2));
     const scoreInt = Math.floor(game.score);
+
+    // HP display: filled + empty hearts
+    let hpStr = '';
+    for (let i = 0; i < game.player.maxHealth; i++) {
+      hpStr += i < game.player.health ? '♥' : '♡';
+    }
+    hpEl.textContent = hpStr;
+    hpEl.classList.toggle('low', game.player.health === 1);
 
     if (game.mode === 'quickplay') {
       modeEl.textContent  = 'QUICK PLAY';
@@ -1552,17 +1653,35 @@ const UI = {
   showGameOver(stats) {
     const grid = document.getElementById('gameover-stats');
     const flavor = document.getElementById('gameover-flavor');
-    flavor.textContent = stats.score >= stats.highScore && stats.score > 0
-      ? '★ NEW HIGH SCORE ★'
-      : '★ TRY AGAIN ★';
-    grid.innerHTML = `
-      <div class="label">Distance</div><div class="value">${Math.floor(stats.distance)} M</div>
-      <div class="label">Score</div><div class="value">${stats.score}</div>
-      <div class="label">High Score</div><div class="value">${stats.highScore}</div>
-      <div class="label">Clean Landings</div><div class="value">${stats.cleanLandings}</div>
-      <div class="label">Tricks Landed</div><div class="value">${stats.tricks}</div>
-      <div class="label">Top Combo</div><div class="value">x${stats.maxCombo}</div>
-    `;
+    const title = document.querySelector('#screen-gameover .title');
+    const restartBtn = document.querySelector('#screen-gameover [data-action="restart"]');
+    if (stats.mode === 'campaign') {
+      title.textContent = 'LEVEL FAILED';
+      flavor.textContent = `★ LV ${stats.level} · ${stats.levelName} ★`;
+      restartBtn.textContent = 'RESTART LEVEL';
+      grid.innerHTML = `
+        <div class="label">Level</div><div class="value">${stats.level} · ${stats.levelName}</div>
+        <div class="label">Score</div><div class="value">${stats.score}</div>
+        <div class="label">Clean Landings</div><div class="value">${stats.cleanLandings}</div>
+        <div class="label">Tricks Landed</div><div class="value">${stats.tricks}</div>
+        <div class="label">Crashes</div><div class="value">${stats.crashes}</div>
+        <div class="label">Top Combo</div><div class="value">x${stats.maxCombo}</div>
+      `;
+    } else {
+      title.textContent = 'GAME OVER';
+      flavor.textContent = stats.score >= stats.highScore && stats.score > 0
+        ? '★ NEW HIGH SCORE ★'
+        : '★ TRY AGAIN ★';
+      restartBtn.textContent = 'RESTART RUN';
+      grid.innerHTML = `
+        <div class="label">Distance</div><div class="value">${Math.floor(stats.distance)} M</div>
+        <div class="label">Score</div><div class="value">${stats.score}</div>
+        <div class="label">High Score</div><div class="value">${stats.highScore}</div>
+        <div class="label">Clean Landings</div><div class="value">${stats.cleanLandings}</div>
+        <div class="label">Tricks Landed</div><div class="value">${stats.tricks}</div>
+        <div class="label">Top Combo</div><div class="value">x${stats.maxCombo}</div>
+      `;
+    }
     this.showScreen('gameover');
   },
 
@@ -1818,8 +1937,8 @@ class Game {
     // Terrain
     Renderer.drawTerrain(ctx, this.terrain, this.cameraX - shake.x, w);
 
-    // Features (cones, finish flag)
-    Renderer.drawFeatures(ctx, this.terrain, this.cameraX - shake.x, w);
+    // Features (cones, hearts, finish flag)
+    Renderer.drawFeatures(ctx, this.terrain, this.cameraX - shake.x, w, this.timeElapsed);
 
     // Particles behind player? Mix is fine.
     Renderer.drawParticles(ctx, this.effects);
@@ -1875,29 +1994,51 @@ class Game {
   }
 
   onCrashEnd() {
-    if (this.mode === 'quickplay') {
-      // Brief delay then game over
+    // Decrement health
+    this.player.health = Math.max(0, this.player.health - 1);
+
+    if (this.player.health <= 0) {
+      // Out of HP - run ends (delay before showing screen)
       this.qpEndDelay = 0.4;
     } else {
-      // Respawn for campaign
+      // Respawn with one less heart
       this.player.respawn(this.terrain);
-      this.player.baseSpeed = LEVELS[this.currentLevel].baseSpeed;
-      this.score = Math.max(0, this.score - 200);
+      if (this.mode === 'campaign') {
+        this.player.baseSpeed = LEVELS[this.currentLevel].baseSpeed;
+      }
+      const penalty = this.mode === 'campaign' ? 150 : 80;
+      this.score = Math.max(0, this.score - penalty);
       // Snap camera to respawn position so it doesn't scroll back oddly
       this.cameraX = this.player.x - this.logicalW * C.PLAYER_X_FRAC;
-      UI.showPopup('-200 PENALTY', 'red');
+      UI.showPopup(`-1 HP · ${this.player.health} LEFT`, 'red');
     }
+  }
+
+  onHeartPickup(x, y) {
+    if (this.player.health < this.player.maxHealth) {
+      this.player.health++;
+      UI.showPopup('+1 HEART', 'gold');
+    } else {
+      this.score += 200;
+      UI.showPopup('+200 BONUS', 'gold');
+    }
+    Audio.heart();
+    this.effects.sparks(x, y, 16);
+    this.effects.flash(0.18, '#ff90b0');
   }
 
   _endQuickPlayRun() {
     this.state = 'gameover';
     const intScore = Math.floor(this.score);
-    if (intScore > this.highScore) {
+    if (this.mode === 'quickplay' && intScore > this.highScore) {
       this.highScore = intScore;
       try { localStorage.setItem(C.HS_KEY, String(this.highScore)); } catch (e) {}
     }
     UI.hideControls();
     UI.showGameOver({
+      mode: this.mode,
+      level: this.currentLevel + 1,
+      levelName: this.mode === 'campaign' ? LEVELS[this.currentLevel].name : '',
       distance: this.distance,
       score: Math.floor(this.score),
       highScore: this.highScore,
